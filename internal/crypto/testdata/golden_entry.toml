@@ -1,0 +1,19 @@
+format_version = 1
+type = "password"
+name = "github"
+updated_at = 2026-07-06T00:00:00Z
+
+[key]
+wrapped = """
+-----BEGIN AGE ENCRYPTED FILE-----
+YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBiUnJhNnZoa0J6VjRSZkUx
+RzJoUGlFWEFLYjBrYVRQaUxXeUxlcnVpblNZCjUwc2lVeEk3cXpCVEgvUW1seDQy
+ZnovV3lBZzN3VUcraUNzQzEyeXd1VVUKLS0tIGI2TnhtaWhEV0hqeFZHWmE1LzBV
+OWtBNHlQYW9VQU5TYU95SlZ0TkROTHcKptgHwCD1ES5Vv2G+lrbUTHXkAyyh+VGQ
+zHTYqrvdToGCRs0Ocz6vx4LUInTxhapTCSxEIztWEcedkeN/Af3tsA==
+-----END AGE ENCRYPTED FILE-----
+"""
+
+[payload]
+nonce = "DMkzaYDORaxgNI/qLsdYzEw3GDirrJAP"
+ciphertext = "CCwiYCrTx/sFwIBQntb1ev4NsNamoq/8E5vVl3+8PZ/xq5UoJ1O0h0Pm01dTxY5JNJGczmQ5x7yERhVutYNQcLk+Kasuxibo8/iKseUem5JuUyJCNHa4Y2X5w5sx0fUvNil/7pXdllxXx3n8q4oujw=="
