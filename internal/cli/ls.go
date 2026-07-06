@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,6 +14,7 @@ import (
 
 func newLsCmd(d *deps) *cobra.Command {
 	var vaultName, project string
+	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List entries (names are plaintext, no unlock needed)",
@@ -46,6 +48,18 @@ func newLsCmd(d *deps) *cobra.Command {
 					entries = append(entries, e)
 				}
 			}
+			if jsonOut {
+				out := make([]lsEntryJSON, 0, len(entries))
+				for _, e := range entries {
+					out = append(out, lsEntryJSON{
+						Vault:     e.VaultName,
+						Type:      e.Type,
+						Name:      e.Name,
+						UpdatedAt: e.UpdatedAt.UTC(),
+					})
+				}
+				return printJSON(cmd.OutOrStdout(), out)
+			}
 			if len(entries) == 0 {
 				fmt.Fprintln(cmd.ErrOrStderr(), "no entries")
 				return nil
@@ -61,5 +75,13 @@ func newLsCmd(d *deps) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&vaultName, "vault", "", "vault to list")
 	cmd.Flags().StringVar(&project, "project", "", "only env entries of this group")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print entries as JSON")
 	return cmd
+}
+
+type lsEntryJSON struct {
+	Vault     string    `json:"vault"`
+	Type      string    `json:"type"`
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

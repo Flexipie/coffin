@@ -10,13 +10,19 @@ import (
 )
 
 func newGetCmd(d *deps) *cobra.Command {
-	var show bool
+	var show, jsonOut bool
 	var field, vaultName string
 	cmd := &cobra.Command{
 		Use:   "get <query>",
 		Short: "Copy a secret to the clipboard (or print with --show)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonOut && !show {
+				return fmt.Errorf("coffin: --json prints secrets, so it requires --show")
+			}
+			if jsonOut && field != "" {
+				return fmt.Errorf("coffin: --field and --json are mutually exclusive")
+			}
 			if field != "" {
 				if _, err := passwordField(vault.PasswordData{}, field); err != nil {
 					return err
@@ -40,6 +46,12 @@ func newGetCmd(d *deps) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				if jsonOut {
+					return printJSON(cmd.OutOrStdout(), struct {
+						Name string `json:"name"`
+						vault.PasswordData
+					}{ref.Name, data})
+				}
 				return getPassword(cmd, d, cfg, ref, data, field, show)
 			case vault.TypeEnv:
 				if field != "" {
@@ -50,6 +62,16 @@ func newGetCmd(d *deps) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				if jsonOut {
+					// An object keyed by name reads best in scripts
+					// (jq .DB_URL); a duplicated key's last occurrence
+					// wins, matching the merge rule.
+					obj := make(map[string]string, len(data.Vars))
+					for _, ev := range data.Vars {
+						obj[ev.Key] = ev.Value
+					}
+					return printJSON(cmd.OutOrStdout(), obj)
+				}
 				return getEnv(cmd, ref, data, show)
 			}
 			return fmt.Errorf("coffin: %s has unknown type %q", ref.Path, ref.Type)
@@ -58,6 +80,7 @@ func newGetCmd(d *deps) *cobra.Command {
 	cmd.Flags().BoolVar(&show, "show", false, "print to stdout instead of copying")
 	cmd.Flags().StringVar(&field, "field", "", "password field: username, password, url, notes, totp")
 	cmd.Flags().StringVar(&vaultName, "vault", "", "vault to search")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print as JSON (requires --show)")
 	return cmd
 }
 

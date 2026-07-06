@@ -13,7 +13,7 @@ import (
 
 func newDiffCmd(d *deps) *cobra.Command {
 	var envName, vaultName, filePath string
-	var showValues bool
+	var showValues, jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "diff [-e <env>] [-f <file>]",
 		Short: "Compare the project's env group against a local .env file",
@@ -22,17 +22,18 @@ func newDiffCmd(d *deps) *cobra.Command {
 			"works as a CI check. Values are never printed without --values.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return silenceExitCode(cmd, runDiff(cmd, d, envName, vaultName, filePath, showValues))
+			return silenceExitCode(cmd, runDiff(cmd, d, envName, vaultName, filePath, showValues, jsonOut))
 		},
 	}
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "overlay to compare (default: default_env from .coffin.toml)")
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "dotenv file to compare (default: .env next to .coffin.toml)")
 	cmd.Flags().BoolVar(&showValues, "values", false, "print the differing values")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the drift report as JSON")
 	cmd.Flags().StringVar(&vaultName, "vault", "", "vault holding the project group")
 	return cmd
 }
 
-func runDiff(cmd *cobra.Command, d *deps, envName, vaultName, filePath string, showValues bool) error {
+func runDiff(cmd *cobra.Command, d *deps, envName, vaultName, filePath string, showValues, jsonOut bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -93,10 +94,45 @@ func runDiff(cmd *cobra.Command, d *deps, envName, vaultName, filePath string, s
 	sort.Strings(vaultOnly)
 	sort.Strings(localOnly)
 	sort.Strings(changed)
+	if vaultOnly == nil {
+		vaultOnly = []string{}
+	}
+	if localOnly == nil {
+		localOnly = []string{}
+	}
 
 	out := cmd.OutOrStdout()
 	matched := len(data.Vars) - len(vaultOnly) - len(changed)
-	if len(vaultOnly)+len(localOnly)+len(changed) == 0 {
+	inSync := len(vaultOnly)+len(localOnly)+len(changed) == 0
+	if jsonOut {
+		report := diffJSON{
+			Vault:     v.Manifest.Vault.Name,
+			Group:     pf.Group,
+			Env:       env,
+			File:      target,
+			InSync:    inSync,
+			Matching:  matched,
+			VaultOnly: vaultOnly,
+			FileOnly:  localOnly,
+			Changed:   make([]diffChangeJSON, 0, len(changed)),
+		}
+		for _, k := range changed {
+			c := diffChangeJSON{Key: k}
+			if showValues {
+				c.VaultValue = inVault[k]
+				c.LocalValue = local[k]
+			}
+			report.Changed = append(report.Changed, c)
+		}
+		if err := printJSON(out, report); err != nil {
+			return err
+		}
+		if inSync {
+			return nil
+		}
+		return &exitCodeError{code: 1}
+	}
+	if inSync {
 		fmt.Fprintf(out, "In sync: %d vars match %s/%s (%s).\n", matched, v.Manifest.Vault.Name, pf.Group, env)
 		return nil
 	}
@@ -125,4 +161,24 @@ func runDiff(cmd *cobra.Command, d *deps, envName, vaultName, filePath string, s
 	fmt.Fprintf(out, "%d matching, %d only in vault, %d only in the file, %d changed.\n",
 		matched, len(vaultOnly), len(localOnly), len(changed))
 	return &exitCodeError{code: 1}
+}
+
+type diffJSON struct {
+	Vault     string           `json:"vault"`
+	Group     string           `json:"group"`
+	Env       string           `json:"env"`
+	File      string           `json:"file"`
+	InSync    bool             `json:"in_sync"`
+	Matching  int              `json:"matching"`
+	VaultOnly []string         `json:"vault_only"`
+	FileOnly  []string         `json:"file_only"`
+	Changed   []diffChangeJSON `json:"changed"`
+}
+
+// diffChangeJSON carries the values only when --values is set; keys
+// alone otherwise, same posture as the text output.
+type diffChangeJSON struct {
+	Key        string `json:"key"`
+	VaultValue string `json:"vault_value,omitempty"`
+	LocalValue string `json:"local_value,omitempty"`
 }
