@@ -1,0 +1,8 @@
+format_version = 1
+type = "env"
+name = "staging"
+updated_at = 2026-07-06T00:00:00Z
+
+[payload]
+nonce = "OorXNbIPjKfC4aRgb8AJZ7UEscPWUs6u"
+ciphertext = "nJoXglLfEA1iJtKNX4UksJHx4CQWHeMNnzPSR/A2yi4j3JmN0nGJlQsX7H8UJgDF+BW2esn3oU9JDxHlPq9vOTMuuQqzok3VYgdWdPhSG5lM29buS8a8SU9EqKrsMIgbO+B9bTHALDbcc/+jWbVLmcE="
