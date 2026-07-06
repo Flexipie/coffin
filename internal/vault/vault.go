@@ -27,6 +27,12 @@ const (
 	TypeEnvKey   = "env-key"
 )
 
+// Vault kinds as stored in the manifest.
+const (
+	KindPersonal = "personal"
+	KindTeam     = "team"
+)
+
 // Vault is an opened vault directory.
 type Vault struct {
 	Root     string
@@ -126,18 +132,43 @@ func validVaultID(id string) bool {
 	return true
 }
 
-// AgeRecipients parses every manifest recipient's public key.
+// AgeRecipients parses every manifest recipient's public key,
+// regardless of scope. Key wrapping never uses this directly; it goes
+// through the scope-aware selectors below.
 func (v *Vault) AgeRecipients() ([]age.Recipient, error) {
-	if len(v.Manifest.Recipients) == 0 {
-		return nil, fmt.Errorf("coffin: vault %q has no recipients", v.Manifest.Vault.Name)
-	}
-	out := make([]age.Recipient, 0, len(v.Manifest.Recipients))
-	for _, r := range v.Manifest.Recipients {
+	return recipientsInScope(v.Manifest.Vault.Name, v.Manifest.Recipients,
+		func(Recipient) bool { return true })
+}
+
+// recipientsInScope parses the public keys of the recipients the
+// filter admits. Zero admitted recipients is an error: no key may ever
+// be wrapped to nobody.
+func recipientsInScope(vaultName string, list []Recipient, filter func(Recipient) bool) ([]age.Recipient, error) {
+	var out []age.Recipient
+	for _, r := range list {
+		if !filter(r) {
+			continue
+		}
 		rec, err := crypto.ParseRecipient(r.PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("coffin: recipient %q has an invalid public key: %w", r.Name, err)
 		}
 		out = append(out, rec)
 	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("coffin: vault %q has no recipients in scope", vaultName)
+	}
 	return out, nil
+}
+
+// passwordRecipients is the wrap set for password entry keys: full
+// recipients only (FORMAT.md, "Recipient scope").
+func passwordRecipients(vaultName string, list []Recipient) ([]age.Recipient, error) {
+	return recipientsInScope(vaultName, list, Recipient.Full)
+}
+
+// groupRecipients is the wrap set for an env group key: full
+// recipients plus scoped recipients covering the group.
+func groupRecipients(vaultName string, list []Recipient, group string) ([]age.Recipient, error) {
+	return recipientsInScope(vaultName, list, func(r Recipient) bool { return r.Covers(group) })
 }

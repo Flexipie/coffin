@@ -45,10 +45,30 @@ created_at = 2026-07-06T00:00:00Z
 name = "felix"
 public_key = "age1..."
 added_at = 2026-07-06T00:00:00Z
+
+[[recipients]]
+name = "bob"
+public_key = "age1..."
+added_at = 2026-07-06T00:00:00Z
+projects = ["myapp"]                       # optional: scoped recipient
 ```
 
 `vault.id` exists to be bound into AAD so ciphertext cannot be transplanted
 between vaults (see AAD below).
+
+### Recipient scope
+
+A recipient without `projects` is a **full** recipient: every wrapped key in
+the vault includes them. A recipient with `projects` is **scoped**: they are
+included only when wrapping `env/<group>/key.toml` files whose group is
+covered by one of the listed prefixes. Coverage is segment-wise: `myapp`
+covers groups `myapp` and `myapp/api` but not `myapp2`. Each prefix follows
+the same slug rules as group segments.
+
+Scoping is enforced by encryption, not policy: a scoped recipient's identity
+simply cannot unwrap password keys or out-of-scope group keys, because those
+blobs were never encrypted to it. An empty `projects` array is invalid to
+write; readers treat it as scoped-to-nothing (no key includes the recipient).
 
 ### Password entry: passwords/<slug>.toml
 
@@ -103,11 +123,14 @@ ciphertext = "base64"
 ### Wrapped data key
 
 Each entry (or env group) has a random 32-byte data key. It is encrypted to
-ALL current recipients as ONE armored age blob via a single
-`age.Encrypt(w, recipients...)` call. age natively produces one stanza per
-recipient inside that blob; storing N separate blobs would re-implement what
-age already does and would only make remove-without-rotate easier, which is
-forbidden (revocation always rotates, see below).
+all recipients **in scope for that key** as ONE armored age blob via a single
+`age.Encrypt(w, recipients...)` call: password entry keys go to every full
+recipient; an env group key goes to every full recipient plus every scoped
+recipient whose `projects` covers the group (see "Recipient scope"). age
+natively produces one stanza per recipient inside that blob; storing N
+separate blobs would re-implement what age already does and would only make
+remove-without-rotate easier, which is forbidden (revocation always rotates,
+see below).
 
 ### AEAD
 
@@ -204,11 +227,22 @@ reported distinctly.
 
 ## Recipient operations
 
-- **Add recipient**: rewrap only. The data key is unchanged; the wrapped blob
-  is re-encrypted to the enlarged recipient set. Cheap, no payload rewrite.
-- **Revoke recipient**: always rotate. Generate a new data key, re-encrypt
-  every payload under it, wrap the new key to the remaining recipients. Old
+- **Add recipient**: rewrap only. The data key is unchanged; each wrapped
+  blob the new recipient is in scope for is re-encrypted to the enlarged
+  recipient set. Cheap, no payload rewrite. For a scoped recipient only the
+  covered env group keys are rewrapped; for a full recipient, every key.
+- **Revoke recipient**: always rotate, but only what the revoked recipient
+  could read. For a full recipient that is every entry: new data key per
+  password entry and per env group, re-encrypt every payload, wrap the new
+  keys to the remaining in-scope recipients. For a scoped recipient only the
+  covered env groups rotate; passwords and other groups are untouched. Old
   ciphertext in git history remains sealed to the old key, which the revoked
   party held; this is accepted and documented (PRD section 6.7): revocation
   protects the future, not the past.
-- Rotating to zero recipients is an error.
+- Rotating a key to zero recipients is an error (a vault must always keep at
+  least one full recipient).
+- **Widening a scope** (adding projects to an existing scoped recipient, or
+  making them full) is an add-shaped operation: rewrap the newly covered
+  keys. **Narrowing a scope is a revoke-shaped operation** and MUST rotate
+  the newly uncovered groups; removing a prefix without rotating would leave
+  the recipient able to read them from history and key reuse.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -24,11 +25,35 @@ type VaultInfo struct {
 	CreatedAt time.Time `toml:"created_at"`
 }
 
-// Recipient is one [[recipients]] element.
+// Recipient is one [[recipients]] element. A nil Projects list means a
+// full recipient; a non-empty list scopes the recipient to the env
+// groups covered by those prefixes (FORMAT.md, "Recipient scope"). An
+// empty non-nil list is invalid to write and covers nothing on read.
 type Recipient struct {
 	Name      string    `toml:"name"`
 	PublicKey string    `toml:"public_key"`
 	AddedAt   time.Time `toml:"added_at"`
+	Projects  []string  `toml:"projects,omitempty"`
+}
+
+// Full reports whether the recipient can read the entire vault.
+func (r Recipient) Full() bool {
+	return r.Projects == nil
+}
+
+// Covers reports whether the recipient is in scope for an env group.
+// Prefixes match segment-wise: "myapp" covers "myapp" and "myapp/api"
+// but not "myapp2".
+func (r Recipient) Covers(group string) bool {
+	if r.Full() {
+		return true
+	}
+	for _, p := range r.Projects {
+		if group == p || strings.HasPrefix(group, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeManifest(path string, data []byte) (Manifest, error) {

@@ -16,15 +16,16 @@ func (v *Vault) passwordPath(slug string) string {
 }
 
 // PutPassword writes (or overwrites) a self-contained password entry.
-// Every write generates a fresh data key and wraps it to all current
-// recipients, so this path is encrypt-only: adding or editing a
-// password never needs the identity unlocked.
+// Every write generates a fresh data key and wraps it to the full
+// recipients (scoped recipients never see passwords), so this path is
+// encrypt-only: adding or editing a password never needs the identity
+// unlocked.
 func (v *Vault) PutPassword(slug string, data PasswordData) error {
 	slug, err := NormalizeSlug(slug)
 	if err != nil {
 		return err
 	}
-	recipients, err := v.AgeRecipients()
+	recipients, err := passwordRecipients(v.Manifest.Vault.Name, v.Manifest.Recipients)
 	if err != nil {
 		return err
 	}

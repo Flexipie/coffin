@@ -81,7 +81,7 @@ func (v *Vault) PutEnv(group, env string, data EnvData, ident func() (age.Identi
 		if err != nil {
 			return err
 		}
-		recipients, err := v.AgeRecipients()
+		recipients, err := groupRecipients(v.Manifest.Vault.Name, v.Manifest.Recipients, group)
 		if err != nil {
 			return err
 		}
