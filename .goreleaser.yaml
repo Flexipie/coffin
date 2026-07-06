@@ -1,0 +1,42 @@
+version: 2
+
+project_name: coffin
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  # Darwin builds keep cgo on for the concealed-clipboard pasteboard
+  # helper (internal/clipboard/conceal_darwin.go). The release job runs
+  # on a macOS runner, where clang cross-builds both darwin arches.
+  - id: coffin-darwin
+    main: ./cmd/coffin
+    binary: coffin
+    env:
+      - CGO_ENABLED=1
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/Flexipie/coffin/internal/cli.version={{.Version}}
+  # Linux is pure Go (the cgo helper is darwin-only), so static
+  # cross-builds from the same runner.
+  - id: coffin-linux
+    main: ./cmd/coffin
+    binary: coffin
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/Flexipie/coffin/internal/cli.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "coffin_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
