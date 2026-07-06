@@ -9,7 +9,8 @@ Companion to `PRD.md`. This is the build plan: phases, deliverables, tech choice
 - **Post-review hardening applied** before the initial push: KDF params validated on read (invalid = generic `ErrDecrypt`, no argon2 panic, memory capped at 4 GiB) and write (plain error); AAD fields rejected if they contain NUL (panic, broken invariant); `UnwrapKey` wipes wrong-length key material; CI runs `go test -race`.
 - **Phase 2: done.** `internal/vault` (manifest, password entries, env groups with shared keys, list, tiered fuzzy match, hand-rendered writes so the byte shape can't drift, golden mini-vault + tamper-matrix tests), `internal/config` (XDG registry + identity.toml), `internal/session` (keychain-backed, fixed TTL, self-deleting stale items), `internal/clipboard` (copy + hash-guarded detached auto-clear via hidden `__clear-clipboard`), and the commands `init/add/get/ls/edit/rm/gen/unlock/lock`. Env CRUD included (`add --type env`, group key reuse, last-overlay cleanup). Acceptance test drives the whole flow through the real command wiring; a scripted-pty shakedown on macOS validated the real Keychain, pbcopy, and the 3s auto-clear end to end.
 - **Phase 2 post-review hardening applied.** Deep review of the change set found and fixed: tampered TOML could smuggle a NUL (via the TOML unicode escape for U+0000, which BurntSushi decodes without error) into AAD construction and panic; now the entry type header is whitelisted, the manifest vault id is validated as 32 lowercase hex, and identity `public_key` is NUL-checked, all surfacing as `ErrDecrypt` (or a clear corrupt-manifest error) per the FORMAT.md error doctrine. Also fixed: `List` skips groupless env overlays and `splitGroupEnv` no longer panics on them, `unlock` reports honestly when the keychain store fails, dotenv keys are validated (`[A-Za-z_][A-Za-z0-9_]*`), and the `ErrExists` message reads correctly. All covered by new tamper/list/config/dotenv tests.
-- **Next: Phase 3** (team vault: git helpers, join/share/revoke/sync).
+- **Phase 3: done.** `internal/git` (shell-out helpers surfacing git's own stderr), team commands (`init --team`, `join`, `share`, `revoke`, `sync`), and auto-commit wiring so every mutation on a team vault is one git commit (with a dirty-tree guard before each mutation). **Per-project sharing shipped in v1** (decided 2026-07-06, replacing the deferred-to-later plan): recipients carry an optional `projects` scope in the manifest; scoped members are only in the wrap set for env group keys under their prefixes, so they cannot decrypt passwords or other projects, enforced by encryption, not policy. Revoking a scoped member rotates only their groups (smaller blast radius); revoking a full member rotates everything; both print the `needs-source-rotation` checklist (print-only for now, persistence lands with `audit` in v1.1). Sync is pull+push, publish-only on first push, conflicts punt to git's flow with guidance. Two-user acceptance test (`internal/cli/team_accept_test.go`) drives the full loop against a local bare remote: join-before-share reads nothing, scoped share reads exactly one project, revoke locks out while the remaining member still reads.
+- **Next: Phase 4** (dev workflow: `.coffin.toml` discovery, `run`, `render`, `diff`).
 
 ## Locked decisions
 
@@ -25,7 +26,7 @@ Companion to `PRD.md`. This is the build plan: phases, deliverables, tech choice
 | Git | shell out to system `git` |
 | Release | `goreleaser` (binaries, `curl \| sh`, Homebrew tap) |
 
-Still open: conflict UX (v1 punts to git's own conflict flow with good messaging).
+Conflict UX resolved in Phase 3 as planned: `sync` punts to git's own conflict flow with guidance messaging. Per-entry files mean two people editing different entries never conflict at all.
 
 ## Dependencies
 
@@ -109,17 +110,19 @@ Delivered beyond the letter of the phase: golden-file tests pinning the on-disk 
 
 ---
 
-## Phase 3 — Team vault: sharing, sync, revocation (Days 6–7)
+## Phase 3 — Team vault: sharing, sync, revocation (Days 6–7) ✅ DONE
 
 **Goal:** the three-step team loop works end to end.
 
 - `internal/git` shell-out helpers with clear error surfacing.
 - `init --team <path>`, `join <repo>` (clones, prints your pubkey).
-- `share --with <pubkey> [--project <p>]` — add recipient, re-wrap, commit.
-- `revoke --user <name>` — rotate data keys, re-encrypt, re-wrap for remaining, commit, print `needs-source-rotation` checklist.
+- `share --with <pubkey> --name <n> [--project <p>]...` — add recipient (optionally scoped to env project prefixes), re-wrap in-scope keys, commit.
+- `revoke --user <name>` — rotate data keys the revoked member could read, re-encrypt, re-wrap for remaining, commit, print `needs-source-rotation` checklist.
 - `sync` — git pull + push with conflict guidance (punt to git's flow, good messaging).
 
-**Done when:** person A pushes a team vault, person B `join`s + `sync`s + reads it; `revoke` rotates keys and B can still read while the revoked key cannot.
+**Done when:** person A pushes a team vault, person B `join`s + `sync`s + reads it; `revoke` rotates keys and B can still read while the revoked key cannot. ✅ (encoded as `internal/cli/team_accept_test.go`, plus scoped-recipient unit coverage in `internal/vault/recipients_test.go`)
+
+Delivered beyond the letter of the phase: per-project sharing (scoped recipients, spec'd in FORMAT.md "Recipient scope") rather than vault-wide-only, scope-aware revocation blast radius, and auto-commit on `add`/`edit`/`rm` for team vaults per FORMAT.md's one-commit-per-operation rule.
 
 ---
 
