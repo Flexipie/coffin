@@ -216,6 +216,61 @@ The decrypted payload is JSON (encrypted, so TOML-ness does not apply):
   sees the repo (e.g. a git remote) learns entry names and change times, but
   never values, usernames, URLs, or notes.
 
+## Project file: .coffin.toml
+
+Lives in an application repo (NOT in a vault), is committed, and never
+contains secrets. It links the repo to one env group so `coffin run`,
+`render`, and `diff` know what to read. Not to be confused with the vault
+manifest `coffin.toml` (no leading dot), which lives in a vault root.
+
+```toml
+format_version = 1
+
+[project]
+vault = "team"        # registry name of the vault holding the group
+group = "myapp"       # env group path, same slug rules as group segments
+default_env = "dev"   # optional: overlay used when -e is not given
+```
+
+- Discovery walks up from the current directory to the filesystem root,
+  git-style; the first `.coffin.toml` found wins.
+- `group` is required and follows the slug rules above. `default_env` is
+  optional, must be a single slug segment, and must not be `key` (reserved
+  by the on-disk layout for `key.toml`).
+- `vault` may be omitted only when exactly one vault is registered.
+- Unknown keys are ignored (forward compatibility). `format_version` is
+  checked first, per the universal rules.
+- coffin writes this file only via `coffin link` and never commits it; it
+  belongs to the application repo's own history.
+
+### Effective environment (overlay merge)
+
+The effective variable set for environment `X` is `base` overlaid by `X`:
+
+- Start from the group's `base` overlay if it exists, else empty.
+- For each var in `X`: if the key exists in base, replace its value in
+  place (base ordering preserved); otherwise append in `X`'s order.
+- Within a single overlay, a duplicated key's last occurrence wins.
+- `X = base` means base alone. An overlay without a sibling base is used
+  alone. A requested overlay that does not exist is an error naming the
+  available overlays, never a silent fallback.
+
+## Dotenv dialect
+
+`coffin render` writes and `coffin diff`/`add --type env` read this exact
+dialect; render output must round-trip through the parser byte-identically.
+
+- One `KEY=VALUE` per line, split at the first `=`. The value is taken
+  verbatim: no quote processing, no escapes, no multiline values.
+- Keys match `[A-Za-z_][A-Za-z0-9_]*`. A leading `export ` is stripped on
+  read.
+- Blank lines and lines starting with `#` are skipped.
+- Because the parser trims each whole line, values containing newlines,
+  carriage returns, or trailing whitespace cannot round-trip; render
+  refuses to write them (error names the key, never the value).
+- Rendered files start with a header comment identifying the source
+  vault/group/overlay and warning that the file is plaintext.
+
 ## Error doctrine
 
 Every decrypt failure (wrong password, non-recipient identity, tampered
