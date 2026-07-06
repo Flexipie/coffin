@@ -2,6 +2,15 @@
 
 Companion to `PRD.md`. This is the build plan: phases, deliverables, tech choices, and acceptance criteria. Timeline target: ~2 weeks, solo + AI-assisted.
 
+## Status (2026-07-06)
+
+- **Phase 0: done.** Repo scaffolded, cobra root + `coffin version`, CI (vet, race-enabled tests, build on ubuntu + macos), MIT license, README stub. Repo live at `github.com/Flexipie/coffin`, pushed as one commit.
+- **Phase 1: done.** `docs/FORMAT.md` written and reviewed; `internal/crypto` implemented (identity gen, argon2id identity sealing, envelope wrap/unwrap, AAD construction, rewrap + rotate) with round-trip, tamper-matrix, cross-entry-swap, rewrap/rotate, golden, and fuzz tests.
+- **Post-review hardening applied** before the initial push: KDF params validated on read (invalid = generic `ErrDecrypt`, no argon2 panic, memory capped at 4 GiB) and write (plain error); AAD fields rejected if they contain NUL (panic, broken invariant); `UnwrapKey` wipes wrong-length key material; CI runs `go test -race`.
+- **Phase 2: done.** `internal/vault` (manifest, password entries, env groups with shared keys, list, tiered fuzzy match, hand-rendered writes so the byte shape can't drift, golden mini-vault + tamper-matrix tests), `internal/config` (XDG registry + identity.toml), `internal/session` (keychain-backed, fixed TTL, self-deleting stale items), `internal/clipboard` (copy + hash-guarded detached auto-clear via hidden `__clear-clipboard`), and the commands `init/add/get/ls/edit/rm/gen/unlock/lock`. Env CRUD included (`add --type env`, group key reuse, last-overlay cleanup). Acceptance test drives the whole flow through the real command wiring; a scripted-pty shakedown on macOS validated the real Keychain, pbcopy, and the 3s auto-clear end to end.
+- **Phase 2 post-review hardening applied.** Deep review of the change set found and fixed: tampered TOML could smuggle a NUL (via the TOML unicode escape for U+0000, which BurntSushi decodes without error) into AAD construction and panic; now the entry type header is whitelisted, the manifest vault id is validated as 32 lowercase hex, and identity `public_key` is NUL-checked, all surfacing as `ErrDecrypt` (or a clear corrupt-manifest error) per the FORMAT.md error doctrine. Also fixed: `List` skips groupless env overlays and `splitGroupEnv` no longer panics on them, `unlock` reports honestly when the keychain store fails, dotenv keys are validated (`[A-Za-z_][A-Za-z0-9_]*`), and the `ErrExists` message reads correctly. All covered by new tamper/list/config/dotenv tests.
+- **Next: Phase 3** (team vault: git helpers, join/share/revoke/sync).
+
 ## Locked decisions
 
 | Decision | Choice |
@@ -18,16 +27,20 @@ Companion to `PRD.md`. This is the build plan: phases, deliverables, tech choice
 
 Still open: conflict UX (v1 punts to git's own conflict flow with good messaging).
 
-## Dependencies to approve before Phase 1
+## Dependencies
 
-These are the external modules the plan assumes. Flagging per repo policy — confirm before I `go get` them:
+Approved and in use (Phase 0/1/2):
 
 - `filippo.io/age`
 - `golang.org/x/crypto` (argon2, chacha20poly1305)
+- `golang.org/x/term` (hidden prompts)
 - `github.com/spf13/cobra`
-- `github.com/BurntSushi/toml` (manifest + `.coffin.toml`)
+- `github.com/BurntSushi/toml` (decode side; entry files are hand-rendered on write)
 - `github.com/zalando/go-keyring`
 - `github.com/atotto/clipboard` (baseline copy; concealed-clipboard is custom — see Risks)
+
+Still to approve before their phase (flagging per repo policy, confirm before `go get`):
+
 - TUI only (Phase 6+): `github.com/charmbracelet/bubbletea`, `lipgloss`, `huh`
 
 ## Proposed repo layout
@@ -53,19 +66,19 @@ coffin/
 
 ---
 
-## Phase 0 — Scaffolding (0.5 day)
+## Phase 0 — Scaffolding (0.5 day) ✅ DONE
 
 **Goal:** compiling skeleton, CI, one working command.
 
 - `go mod init`, cobra root command, `coffin version`.
-- GitHub Actions: `go test ./...` + `go vet` + build on push.
+- GitHub Actions: `go test -race ./...` + `go vet` + build on push (ubuntu + macos matrix).
 - `.gitignore`, MIT license, README stub.
 
-**Done when:** `go build` produces a `coffin` binary; `coffin version` prints; CI green.
+**Done when:** `go build` produces a `coffin` binary; `coffin version` prints; CI green. ✅
 
 ---
 
-## Phase 1 — Format spec + crypto core (Days 1–2)
+## Phase 1 — Format spec + crypto core (Days 1–2) ✅ DONE
 
 **Goal:** the security foundation, fully tested, before any UX is built.
 
@@ -77,11 +90,13 @@ coffin/
    - Decrypt path: generic failure on wrong password (no oracle, no timing tell).
 3. **Tests:** encrypt→decrypt round-trip; wrong-password fails cleanly; add/remove recipient re-wrap; tamper detection (AEAD auth failure); rotation produces new data keys.
 
-**Done when:** `go test ./internal/crypto/...` passes including round-trip, tamper, and re-wrap/rotation cases; `FORMAT.md` reviewed.
+**Done when:** `go test ./internal/crypto/...` passes including round-trip, tamper, and re-wrap/rotation cases; `FORMAT.md` reviewed. ✅
+
+Delivered beyond the letter of the phase: golden-file tests pinning the on-disk byte layout, fuzz targets (`FuzzOpen` among them), and the post-review hardening listed in Status (KDF param validation, NUL-free AAD enforcement, key wipe on the wrong-length unwrap path).
 
 ---
 
-## Phase 2 — Personal vault + core commands (Days 3–5)
+## Phase 2 — Personal vault + core commands (Days 3–5) ✅ DONE
 
 **Goal:** Coffin usable daily for personal passwords, offline.
 
@@ -90,7 +105,7 @@ coffin/
 - `internal/clipboard` copy + auto-clear after 30s (only if clipboard still holds our value).
 - Commands: `init`, `add` (`--type env|password`), `get` (fuzzy, clipboard by default, `--show`), `ls`, `edit`, `rm`, `gen`, `unlock`, `lock`.
 
-**Done when:** Felix can `init`, add a password, `get` it (auto-clears), regenerate, all within one unlock. Real daily-driver test starts here.
+**Done when:** Felix can `init`, add a password, `get` it (auto-clears), regenerate, all within one unlock. Real daily-driver test starts here. ✅ (encoded as `internal/cli/accept_test.go`; macOS keychain/pbcopy/auto-clear validated with a scripted pty shakedown)
 
 ---
 
