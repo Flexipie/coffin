@@ -22,6 +22,10 @@ func newRootCmd(d *deps) *cobra.Command {
 		newGenCmd(d),
 		newUnlockCmd(d),
 		newLockCmd(d),
+		newJoinCmd(d),
+		newShareCmd(d),
+		newRevokeCmd(d),
+		newSyncCmd(d),
 		newClearClipCmd(d),
 	)
 	return cmd

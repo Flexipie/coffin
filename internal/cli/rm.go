@@ -26,6 +26,9 @@ func newRmCmd(d *deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := ensureCleanTeamVault(v); err != nil {
+				return err
+			}
 			if !force {
 				answer, err := d.prompt.Prompt(fmt.Sprintf("Delete %s (%s)? [y/N]: ", ref.Name, ref.VaultName))
 				if err != nil {
@@ -52,7 +55,7 @@ func newRmCmd(d *deps) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Removed %s from %s.\n", ref.Name, ref.VaultName)
-			return nil
+			return teamCommit(cmd.ErrOrStderr(), v, "rm "+ref.Name)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "delete without confirmation")

@@ -3,24 +3,36 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Flexipie/coffin/internal/config"
 	"github.com/Flexipie/coffin/internal/crypto"
+	"github.com/Flexipie/coffin/internal/git"
 	"github.com/Flexipie/coffin/internal/vault"
 )
 
 const minPasswordLen = 8
 
 func newInitCmd(d *deps) *cobra.Command {
-	var path, name string
+	var path, name, teamPath string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create your identity and personal vault",
+		Short: "Create your identity and personal vault, or a team vault with --team",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			errW := cmd.ErrOrStderr()
+
+			if teamPath != "" {
+				if path != "" {
+					return fmt.Errorf("coffin: --path does not apply to --team (the team path is the --team argument)")
+				}
+				if !cmd.Flags().Changed("name") {
+					name = ""
+				}
+				return initTeamVault(cmd, d, teamPath, name)
+			}
 
 			exists, err := config.IdentityExists()
 			if err != nil {
@@ -109,7 +121,71 @@ func newInitCmd(d *deps) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&path, "path", "", "vault directory (default ~/.vault/personal)")
 	cmd.Flags().StringVar(&name, "name", "personal", "vault name in the registry")
+	cmd.Flags().StringVar(&teamPath, "team", "", "create a team vault at this path instead")
 	return cmd
+}
+
+// initTeamVault creates a team vault in a git repo. It needs an
+// existing identity (the creator is the first recipient) but no
+// unlock: only the public key goes into the manifest.
+func initTeamVault(cmd *cobra.Command, d *deps, path, name string) error {
+	errW := cmd.ErrOrStderr()
+	enc, err := config.LoadIdentity()
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		name = filepath.Base(filepath.Clean(path))
+	}
+	if _, ok := cfg.FindVault(name); ok {
+		return fmt.Errorf("coffin: a vault named %q is already registered; pass --name", name)
+	}
+
+	defaultUser := os.Getenv("USER")
+	if defaultUser == "" {
+		defaultUser = "me"
+	}
+	userName, err := promptWithDefault(d.prompt, "Your name (visible to the team)", defaultUser)
+	if err != nil {
+		return err
+	}
+
+	v, err := vault.Create(path, name, vault.KindTeam, vault.Recipient{
+		Name:      userName,
+		PublicKey: enc.PublicKey,
+	})
+	if err != nil {
+		return err
+	}
+	if !git.IsRepo(v.Root) {
+		if err := git.Init(v.Root); err != nil {
+			return err
+		}
+	}
+	if err := git.Commit(v.Root, fmt.Sprintf("init team vault %s", name), "."); err != nil {
+		return err
+	}
+	abs, err := filepath.Abs(v.Root)
+	if err != nil {
+		return err
+	}
+	if err := cfg.AddVault(name, abs, vault.KindTeam); err != nil {
+		return err
+	}
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(errW, "Team vault %q created at %s.\n\n", name, abs)
+	fmt.Fprintln(errW, "Next steps:")
+	fmt.Fprintf(errW, "  git -C %s remote add origin <url>   connect it to a remote\n", abs)
+	fmt.Fprintln(errW, "  coffin sync                          publish it")
+	fmt.Fprintln(errW, "  (teammates run: coffin join <url>, then you share their printed key)")
+	return nil
 }
 
 // vaultManifestPath mirrors the vault package's layout without

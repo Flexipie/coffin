@@ -29,13 +29,21 @@ func newAddCmd(d *deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := ensureCleanTeamVault(v); err != nil {
+				return err
+			}
 			switch typ {
 			case vault.TypePassword:
-				return addPassword(cmd, d, cfg, v, args[0], fromFile)
+				err = addPassword(cmd, d, cfg, v, args[0], fromFile)
 			case vault.TypeEnv:
-				return addEnv(cmd, d, cfg, v, args[0], fromFile)
+				err = addEnv(cmd, d, cfg, v, args[0], fromFile)
+			default:
+				return fmt.Errorf("coffin: unknown --type %q (password or env)", typ)
 			}
-			return fmt.Errorf("coffin: unknown --type %q (password or env)", typ)
+			if err != nil {
+				return err
+			}
+			return teamCommit(cmd.ErrOrStderr(), v, "add "+commitSlug(args[0]))
 		},
 	}
 	cmd.Flags().StringVar(&typ, "type", vault.TypePassword, "entry type: password or env")

@@ -25,6 +25,9 @@ func newEditCmd(d *deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := ensureCleanTeamVault(v); err != nil {
+				return err
+			}
 			id, _, err := acquireIdentity(d, cfg, cmd.ErrOrStderr())
 			if err != nil {
 				return err
@@ -34,11 +37,16 @@ func newEditCmd(d *deps) *cobra.Command {
 				if fromFile != "" {
 					return fmt.Errorf("coffin: --from-file only applies to env entries")
 				}
-				return editPassword(cmd, d, v, ref, id)
+				err = editPassword(cmd, d, v, ref, id)
 			case vault.TypeEnv:
-				return editEnv(cmd, v, ref, id, fromFile)
+				err = editEnv(cmd, v, ref, id, fromFile)
+			default:
+				return fmt.Errorf("coffin: %s has unknown type %q", ref.Path, ref.Type)
 			}
-			return fmt.Errorf("coffin: %s has unknown type %q", ref.Path, ref.Type)
+			if err != nil {
+				return err
+			}
+			return teamCommit(cmd.ErrOrStderr(), v, "edit "+ref.Name)
 		},
 	}
 	cmd.Flags().StringVar(&vaultName, "vault", "", "vault to search")

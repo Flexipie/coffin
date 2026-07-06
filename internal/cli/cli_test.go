@@ -63,17 +63,21 @@ func (s *fakeStore) Get() (string, bool, error) { return s.value, s.present, nil
 func (s *fakeStore) Set(v string) error         { s.value, s.present = v, true; return nil }
 func (s *fakeStore) Delete() error              { s.value, s.present = "", false; return nil }
 
-// testEnv is one user's machine: keychain and clipboard survive across
-// commands, prompts are scripted per command.
+// testEnv is one user's machine: keychain, clipboard, and config home
+// survive across commands, prompts are scripted per command. Tests can
+// hold several (the two-user team flow); run() switches
+// XDG_CONFIG_HOME to the acting user before every command.
 type testEnv struct {
-	store *fakeStore
-	clip  *fakeClip
+	store     *fakeStore
+	clip      *fakeClip
+	configDir string
 }
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	return &testEnv{store: &fakeStore{}, clip: &fakeClip{}}
+	e := &testEnv{store: &fakeStore{}, clip: &fakeClip{}, configDir: t.TempDir()}
+	t.Setenv("XDG_CONFIG_HOME", e.configDir)
+	return e
 }
 
 // harmlessExe is what the spawned clipboard clearer execs in tests.
@@ -88,6 +92,7 @@ func harmlessExe(t *testing.T) string {
 
 func (e *testEnv) run(t *testing.T, prompts []string, stdin string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", e.configDir)
 	exe := harmlessExe(t)
 	p := &fakePrompter{answers: prompts}
 	d := &deps{
