@@ -16,18 +16,20 @@ type Clipboard interface {
 
 var errUnsupported = errors.New("coffin: no clipboard available on this system (use --show)")
 
-// System returns the real clipboard. atotto shells out to
+// System returns the real clipboard. On macOS cgo builds, writes go
+// through NSPasteboard marked org.nspasteboard.ConcealedType so
+// clipboard history managers skip the secret. Everywhere else (and if
+// the pasteboard write ever fails) atotto shells out to
 // pbcopy/xclip/xsel; on a system with none of those every call
 // degrades to a clear "use --show" error.
-//
-// Phase 5: concealed-type support (org.nspasteboard.ConcealedType on
-// macOS, so clipboard managers skip the secret) needs a native
-// pasteboard helper; atotto/pbcopy cannot set it.
 func System() Clipboard { return systemClipboard{} }
 
 type systemClipboard struct{}
 
 func (systemClipboard) Copy(text string) error {
+	if concealSupported && copyConcealed(text) == nil {
+		return nil
+	}
 	if clipboard.Unsupported {
 		return errUnsupported
 	}
