@@ -36,6 +36,16 @@ func IsRepo(dir string) bool {
 	return err == nil && out == "true"
 }
 
+// IsIgnored reports whether path (relative to dir or absolute) is
+// ignored by dir's repository. check-ignore exits 1 for "not ignored",
+// which run would misreport as a failure, so this shells out directly;
+// any git error just means "not ignored" for the caller's purposes.
+func IsIgnored(dir, path string) bool {
+	cmd := exec.Command("git", "check-ignore", "-q", "--", path)
+	cmd.Dir = dir
+	return cmd.Run() == nil
+}
+
 // Init creates a repository in dir.
 func Init(dir string) error {
 	_, err := run(dir, "init")

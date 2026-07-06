@@ -26,6 +26,10 @@ func newRootCmd(d *deps) *cobra.Command {
 		newShareCmd(d),
 		newRevokeCmd(d),
 		newSyncCmd(d),
+		newLinkCmd(d),
+		newRunCmd(d),
+		newRenderCmd(d),
+		newDiffCmd(d),
 		newClearClipCmd(d),
 	)
 	return cmd
